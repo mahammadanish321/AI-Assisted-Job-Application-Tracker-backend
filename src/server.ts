@@ -42,18 +42,17 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-// Connect to Database and start server
-mongoose
-  .connect(process.env.MONGO_URI as string)
-  .then(() => {
-    console.log('✅ MongoDB Connected');
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+// Start server immediately to bind to PORT (important for Render health checks)
+app.listen(PORT, () => {
+  console.log(`🚀 Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+  
+  // Connect to Database in the background
+  mongoose
+    .connect(process.env.MONGO_URI as string)
+    .then(() => console.log('✅ MongoDB Connected'))
+    .catch((error) => {
+      console.error(`❌ Error connecting to MongoDB: ${error.message}`);
     });
-  })
-  .catch((error) => {
-    console.error(`❌ Error connecting to MongoDB: ${error.message}`);
-    process.exit(1);
-  });
+});
 
 export default app;

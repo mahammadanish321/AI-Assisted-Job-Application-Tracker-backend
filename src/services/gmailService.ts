@@ -1,4 +1,4 @@
-import { google } from 'googleapis';
+import { gmail as google_gmail, auth as google_auth } from '@googleapis/gmail';
 import { Application } from '../models/Application';
 import { Notification } from '../models/Notification';
 
@@ -9,10 +9,10 @@ class GmailService {
    */
   async syncJobUpdates(userId: string, accessToken: string) {
     try {
-      const auth = new google.auth.OAuth2();
+      const auth = new google_auth.OAuth2();
       auth.setCredentials({ access_token: accessToken });
 
-      const gmail = google.gmail({ version: 'v1', auth });
+      const gmail = google_gmail({ version: 'v1', auth });
 
       // 1. Get tracked companies from user's active applications
       // Only include valid string companies
