@@ -171,4 +171,33 @@ export const parseJobDescriptionAction = asyncHandler(async (req: AuthRequest, r
   const extractedDetails = await jobDescriptionService.extractJobDetails(jdText);
   res.json(extractedDetails);
 });
+/**
+ * @desc    Stream resume bullets using AI
+ * @route   GET /api/applications/stream-resume
+ * @access  Private
+ */
+export const streamResumeBulletsAction = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { jdText, userExperience } = req.query as { jdText: string; userExperience: string };
+  
+  if (!jdText || !userExperience) {
+    res.status(400);
+    throw new Error('Please provide both jdText and userExperience in query params');
+  }
 
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  try {
+    const stream = jobDescriptionService.streamResumeBullets(jdText, userExperience);
+    for await (const bullet of stream) {
+      res.write(`data: ${JSON.stringify({ bullet })}\n\n`);
+    }
+    res.write('data: [DONE]\n\n');
+    res.end();
+  } catch (error) {
+    console.error('Streaming error:', error);
+    res.write(`data: ${JSON.stringify({ error: 'Streaming failed' })}\n\n`);
+    res.end();
+  }
+});

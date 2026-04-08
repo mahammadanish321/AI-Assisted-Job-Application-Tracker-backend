@@ -120,6 +120,87 @@ class JobDescriptionService {
     const parsed = this.extractJSON(content) as { bullets: string[] };
     return parsed.bullets;
   }
+
+  /**
+   * Generates 3-5 specific resume bullet points tailored to the JD, streaming the output.
+   */
+  async *streamResumeBullets(jdText: string, userExperience: string) {
+    if (process.env.NODE_ENV === 'development' && process.env.USE_MOCK === 'true') {
+      const mockBullets = [
+        "Architected scalable backend infrastructure leveraging Node.js and TypeScript, increasing API response times by 35%.",
+        "Integrated advanced OpenAI API endpoints utilizing json_object structural schemas for highly accurate data pipelines.",
+        "Engineered React/Vite Kanban interfaces resulting in a dramatic enhancement in user application tracking experiences.",
+        "Deployed JWT HttpOnly cookie authentication methodologies to definitively secure RESTful routes against XSS injection vectors.",
+      ];
+      
+      for (const bullet of mockBullets) {
+        await this.simulateDelay(500);
+        yield bullet;
+      }
+      return;
+    }
+
+    const schema = `{ "bullets": string[] }`;
+
+    const stream = await this.getClient().chat.completions.create({
+      model: this.getModel(),
+      messages: [
+        {
+          role: 'system',
+          content: this.buildJsonSystemPrompt(schema) + '\nGenerate 3-5 highly specific, impact-driven resume bullet points tailored to the job description. Return them as a JSON object with a bullets array.',
+        },
+        {
+          role: 'user',
+          content: `Job Description:\n${jdText}\n\nUser Experience:\n${userExperience}`,
+        },
+      ],
+      stream: true,
+    });
+
+    let currentText = '';
+    let lastYieldedBullets: string[] = [];
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      currentText += content;
+
+      // Try to parse the current partial JSON
+      try {
+        const match = currentText.match(/\{[\s\S]*\}/);
+        if (match) {
+           // Basic attempt to close the JSON if it's partial
+           let jsonToParse = match[0];
+           if (!jsonToParse.endsWith(']}')) {
+              // Naive patching for partial bullets
+              if (jsonToParse.includes('"bullets": [')) {
+                 const bulletsPart = jsonToParse.split('"bullets": [')[1];
+                 const bullets = bulletsPart.split(',').map(b => {
+                    const clean = b.trim().replace(/^"/, '').replace(/"$/, '').replace(/\]$/, '').replace(/\}$/, '');
+                    return clean;
+                 }).filter(b => b.length > 5);
+                 
+                 for (const bullet of bullets) {
+                    if (!lastYieldedBullets.includes(bullet)) {
+                       yield bullet;
+                       lastYieldedBullets.push(bullet);
+                    }
+                 }
+              }
+           } else {
+              const full = JSON.parse(jsonToParse);
+              for (const bullet of full.bullets) {
+                if (!lastYieldedBullets.includes(bullet)) {
+                  yield bullet;
+                  lastYieldedBullets.push(bullet);
+                }
+              }
+           }
+        }
+      } catch (e) {
+        // Silently fail parsing until enough data is available
+      }
+    }
+  }
 }
 
 export default new JobDescriptionService();
