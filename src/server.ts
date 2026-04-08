@@ -14,10 +14,14 @@ dotenv.config();
 const app = express();
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  origin: [
+    'http://localhost:5173', 
+    'http://127.0.0.1:5173',
+    process.env.FRONTEND_URL as string
+  ].filter(Boolean),
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());

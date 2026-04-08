@@ -8,8 +8,12 @@ const notificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['APPLICATION_CREATED', 'STATUS_UPDATED', 'AI_EXTRACTION_COMPLETE', 'SYSTEM'],
+    enum: ['APPLICATION_CREATED', 'STATUS_UPDATED', 'AI_EXTRACTION_COMPLETE', 'SYSTEM', 'EMAIL_UPDATE'],
     required: true,
+  },
+  metadata: {
+    messageId: { type: String },
+    from: { type: String },
   },
   message: {
     type: String,

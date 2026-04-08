@@ -140,3 +140,63 @@ export const logoutUser = asyncHandler(async (req: Request, res: Response) => {
   
   res.status(200).json({ message: 'Logged out successfully' });
 });
+
+/**
+ * @desc    Google Auth (Login/Signup)
+ * @route   POST /api/auth/google
+ * @access  Public
+ */
+export const googleAuthUser = asyncHandler(async (req: Request, res: Response) => {
+  const { googleAccessToken } = req.body;
+
+  if (!googleAccessToken) {
+    res.status(400);
+    throw new Error('Google Access Token is required');
+  }
+
+  // Verify and fetch user info from Google
+  const googleRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${googleAccessToken}` }
+  });
+
+  if (!googleRes.ok) {
+    res.status(401);
+    throw new Error('Invalid Google Access Token');
+  }
+
+  const userProfile: any = await googleRes.json();
+  const { email, name, picture } = userProfile;
+
+  if (!email) {
+    res.status(400);
+    throw new Error('Email not found in Google profile');
+  }
+
+  let user = await User.findOne({ email });
+
+  if (!user) {
+    user = await User.create({
+      name,
+      email,
+      avatar: picture || '',
+    });
+  } else {
+    if (!user.avatar && picture) {
+      user.avatar = picture;
+      await user.save();
+    }
+  }
+
+  const accessToken = generateAccessToken((user._id as unknown) as string);
+  const refreshToken = generateRefreshToken((user._id as unknown) as string);
+
+  setRefreshTokenCookie(res, refreshToken);
+
+  res.json({
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    avatar: user.avatar,
+    accessToken,
+  });
+});

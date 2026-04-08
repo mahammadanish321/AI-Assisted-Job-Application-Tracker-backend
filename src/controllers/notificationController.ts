@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import asyncHandler from 'express-async-handler';
 import { Notification } from '../models/Notification';
 import { AuthRequest } from '../middlewares/auth';
+import gmailService from '../services/gmailService';
 
 /**
  * @desc    Get all notifications for current user
@@ -75,4 +76,21 @@ export const getUnreadCount = asyncHandler(async (req: AuthRequest, res: Respons
     isRead: false,
   });
   res.json({ count });
+});
+
+/**
+ * @desc    Sync Gmail for job updates
+ * @route   POST /api/notifications/sync-gmail
+ * @access  Private
+ */
+export const syncGmailAction = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { googleAccessToken } = req.body;
+  
+  if (!googleAccessToken) {
+    res.status(400);
+    throw new Error('Google Access Token is required for syncing Gmail.');
+  }
+
+  const result = await gmailService.syncJobUpdates((req.user?._id as unknown) as string, googleAccessToken);
+  res.json(result);
 });
