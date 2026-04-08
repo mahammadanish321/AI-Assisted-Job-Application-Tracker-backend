@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
-import { Application } from '../models/Application';
-import { Notification } from '../models/Notification';
+import { Application } from '../models/Application.js';
+import { Notification } from '../models/Notification.js';
 
 class GmailService {
   /**

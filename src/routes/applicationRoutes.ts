@@ -7,8 +7,8 @@ import {
   deleteApplication,
   generateResumeAction,
   parseJobDescriptionAction,
-} from '../controllers/applicationController';
-import { protect } from '../middlewares/auth';
+} from '../controllers/applicationController.js';
+import { protect } from '../middlewares/auth.js';
 
 const router = express.Router();
 

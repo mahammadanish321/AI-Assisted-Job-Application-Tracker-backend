@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { IAIResumeResponse } from '../types';
+import { IAIResumeResponse } from '../types/index.js';
 
 class JobDescriptionService {
   private _openai: OpenAI | null = null;

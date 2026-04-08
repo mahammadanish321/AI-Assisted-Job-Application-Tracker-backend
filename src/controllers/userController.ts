@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
 import asyncHandler from 'express-async-handler';
-import { User } from '../models/User';
-import { AuthRequest } from '../middlewares/auth';
-import { generateSignature } from '../utils/cloudinary';
+import { User } from '../models/User.js';
+import { AuthRequest } from '../middlewares/auth.js';
+import { generateSignature } from '../utils/cloudinary.js';
 
 /**
  * @desc    Get Cloudinary signature for secure uploads

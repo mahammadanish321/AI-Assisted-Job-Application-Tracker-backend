@@ -1,6 +1,6 @@
 import express from 'express';
-import { protect } from '../middlewares/auth';
-import { getProfile, updateProfile, addResume, deleteResume, getCloudinarySignature } from '../controllers/userController';
+import { protect } from '../middlewares/auth.js';
+import { getProfile, updateProfile, addResume, deleteResume, getCloudinarySignature } from '../controllers/userController.js';
 
 const router = express.Router();
 

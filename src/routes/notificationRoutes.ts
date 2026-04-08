@@ -6,8 +6,8 @@ import {
   deleteNotification,
   getUnreadCount,
   syncGmailAction,
-} from '../controllers/notificationController';
-import { protect } from '../middlewares/auth';
+} from '../controllers/notificationController.js';
+import { protect } from '../middlewares/auth.js';
 
 const router = express.Router();
 

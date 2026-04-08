@@ -3,11 +3,11 @@ import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import mongoose from 'mongoose';
-import { notFound, errorHandler } from './middlewares/errorHandler';
-import authRoutes from './routes/authRoutes';
-import applicationRoutes from './routes/applicationRoutes';
-import userRoutes from './routes/userRoutes';
-import notificationRoutes from './routes/notificationRoutes';
+import { notFound, errorHandler } from './middlewares/errorHandler.js';
+import authRoutes from './routes/authRoutes.js';
+import applicationRoutes from './routes/applicationRoutes.js';
+import userRoutes from './routes/userRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 
 dotenv.config();
 

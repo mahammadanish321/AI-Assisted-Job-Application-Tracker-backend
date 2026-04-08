@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
 import asyncHandler from 'express-async-handler';
-import { Notification } from '../models/Notification';
-import { AuthRequest } from '../middlewares/auth';
-import gmailService from '../services/gmailService';
+import { Notification } from '../models/Notification.js';
+import { AuthRequest } from '../middlewares/auth.js';
+import gmailService from '../services/gmailService.js';
 
 /**
  * @desc    Get all notifications for current user

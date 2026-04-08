@@ -19,3 +19,6 @@ export const errorHandler = (
     stack: process.env.NODE_ENV === 'production' ? null : err.stack,
   });
 };
+
+// For ES module default export
+export default { notFound, errorHandler };

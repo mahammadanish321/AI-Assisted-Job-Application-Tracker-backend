@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import asyncHandler from 'express-async-handler';
-import { Application } from '../models/Application';
-import jobDescriptionService from '../services/jobDescriptionService';
-import { AuthRequest } from '../middlewares/auth';
-import { Notification } from '../models/Notification';
+import { Application } from '../models/Application.js';
+import jobDescriptionService from '../services/jobDescriptionService.js';
+import { AuthRequest } from '../middlewares/auth.js';
+import { Notification } from '../models/Notification.js';
 
 /**
  * @desc    Get logged in user applications

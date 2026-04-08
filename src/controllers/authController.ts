@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import asyncHandler from 'express-async-handler';
 import jwt from 'jsonwebtoken';
-import { User } from '../models/User';
-import { Notification } from '../models/Notification';
-import { generateAccessToken, generateRefreshToken } from '../utils/generateToken';
+import { User } from '../models/User.js';
+import { Notification } from '../models/Notification.js';
+import { generateAccessToken, generateRefreshToken } from '../utils/generateToken.js';
 
 // Helper function to set the refresh token in an HttpOnly cookie
 const setRefreshTokenCookie = (res: Response, token: string) => {
