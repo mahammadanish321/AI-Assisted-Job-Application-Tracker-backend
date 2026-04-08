@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: job-tracker-backend
+    runtime: node
+    plan: standard
+    
+    # Optimize build process
+    buildCommand: npm run build
+    startCommand: npm start
+    
+    # Environment setup
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=512
+    
+    # Performance tuning
+    maxClientDisconnectDuration: 600
+    preDeployCommand: npm ci --omit=dev
+    
+    # Health check for faster deployment detection
+    healthCheckPath: /
+    healthCheckInterval: 30
+    healthCheckTimeout: 10
+    healthCheckStartupFailureThresholdCount: 5

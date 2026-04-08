@@ -54,57 +54,82 @@ class GmailService {
       let newNotificationsCount = 0;
       const targetKeywords = ['interview', 'status', 'assessment', 'offer', 'next steps', 'update'];
 
-      // 3. Process each message
-      for (const msg of messages) {
-        if (!msg.id) continue;
-
-        // Check if we already notified about this exact email
-        const existingNotification = await Notification.findOne({
+      // Get all existing notification message IDs in a single query for faster lookup
+      const existingMessageIds = new Set(
+        (await Notification.find({
           user: userId,
-          'metadata.messageId': msg.id
-        });
+          'metadata.messageId': { $in: messages.map(m => m.id) }
+        }).select('metadata.messageId'))
+          .map(n => n.metadata?.messageId)
+      );
 
-        if (existingNotification) continue;
+      // 3. Process messages in parallel batches (max 10 concurrent requests to avoid rate limits)
+      const batchSize = 10;
+      const messagesToProcess = messages.filter(msg => msg.id && !existingMessageIds.has(msg.id));
 
-        // Fetch snippets/details
-        const msgDetails = await gmail.users.messages.get({
-          userId: 'me',
-          id: msg.id,
-          format: 'metadata', // metadata has the snippet and headers
-          metadataHeaders: ['From', 'Subject', 'Date']
-        });
+      for (let i = 0; i < messagesToProcess.length; i += batchSize) {
+        const batch = messagesToProcess.slice(i, i + batchSize);
 
-        const snippet = msgDetails.data.snippet || '';
-        const headers = msgDetails.data.payload?.headers || [];
-        const subjectHeader = headers.find(h => h.name?.toLowerCase() === 'subject');
-        const fromHeader = headers.find(h => h.name?.toLowerCase() === 'from');
+        // Fetch all message details in parallel
+        const detailPromises = batch.map(msg =>
+          gmail.users.messages.get({
+            userId: 'me',
+            id: msg.id!,
+            format: 'metadata',
+            metadataHeaders: ['From', 'Subject', 'Date']
+          }).catch(err => {
+            console.warn(`Failed to fetch message ${msg.id}:`, err.message);
+            return null;
+          })
+        );
 
-        const subject = subjectHeader?.value || 'No Subject';
-        const from = fromHeader?.value || 'Unknown Sender';
+        const msgDetails = await Promise.all(detailPromises);
 
-        // Check for high-priority keywords in snippet or subject
-        const combinedText = `${subject} ${snippet}`.toLowerCase();
-        const hasKeyword = targetKeywords.some(kw => combinedText.includes(kw));
+        // Process fetched messages and collect notifications to create
+        const notificationsToCreate = [];
 
-        // Attempt to extract the company name that matched
-        const matchedCompany = trackedCompanies.find(c => {
-           const cleanName = c.replace(/[^a-zA-Z0-9]/g, '').toLowerCase(); 
-           return from.toLowerCase().includes(cleanName);
-        }) || from?.split('<')[0]?.trim() || 'a tracked company';
+        for (let j = 0; j < batch.length; j++) {
+          const msg = batch[j];
+          const msgDetail = msgDetails[j];
 
-        if (hasKeyword) {
-          // Create Notification
-          await Notification.create({
-            user: userId,
-            type: 'EMAIL_UPDATE',
-            message: `New Update from ${matchedCompany}: ${subject} - "${snippet.substring(0, 80)}..."`,
-            link: '/dashboard', 
-            metadata: {
-              messageId: msg.id,
-              from: from
-            }
-          });
-          newNotificationsCount++;
+          if (!msgDetail || !msg.id) continue;
+
+          const snippet = msgDetail.data.snippet || '';
+          const headers = msgDetail.data.payload?.headers || [];
+          const subjectHeader = headers.find(h => h.name?.toLowerCase() === 'subject');
+          const fromHeader = headers.find(h => h.name?.toLowerCase() === 'from');
+
+          const subject = subjectHeader?.value || 'No Subject';
+          const from = fromHeader?.value || 'Unknown Sender';
+
+          // Check for high-priority keywords
+          const combinedText = `${subject} ${snippet}`.toLowerCase();
+          const hasKeyword = targetKeywords.some(kw => combinedText.includes(kw));
+
+          if (hasKeyword) {
+            // Extract company name
+            const matchedCompany = trackedCompanies.find(c => {
+              const cleanName = c.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+              return from.toLowerCase().includes(cleanName);
+            }) || from?.split('<')[0]?.trim() || 'a tracked company';
+
+            notificationsToCreate.push({
+              user: userId,
+              type: 'EMAIL_UPDATE',
+              message: `New Update from ${matchedCompany}: ${subject} - "${snippet.substring(0, 80)}..."`,
+              link: '/dashboard',
+              metadata: {
+                messageId: msg.id,
+                from: from
+              }
+            });
+          }
+        }
+
+        // Batch create all notifications at once instead of one by one
+        if (notificationsToCreate.length > 0) {
+          await Notification.insertMany(notificationsToCreate);
+          newNotificationsCount += notificationsToCreate.length;
         }
       }
 
