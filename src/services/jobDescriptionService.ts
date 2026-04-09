@@ -218,7 +218,21 @@ ${jdText}`;
    * Generate bullets (refactored to use provider-specific logic)
    */
   async generateResumeBullets(jdText: string, userExperience: string): Promise<string[]> {
-    const prompt = `Generate 3 bullet points for a resume based on this JD:\n${jdText}\n\nExperience: ${userExperience}\nFormat: Return as a JSON array of strings in a key called "bullets".`;
+    const prompt = `You are a professional resume writer. Based on the Job Description and the User's Experience below, generate 3 highly impactful, achievement-oriented bullet points for a resume.
+    
+JD TEXT:
+${jdText}
+
+USER EXPERIENCE:
+${userExperience}
+
+FORMATTING INSTRUCTION:
+Return ONLY a valid JSON object with a single key "bullets" containing an array of 3 strings. 
+No introductory text, no markdown code blocks, JUST the JSON.
+
+EXAMPLE:
+{ "bullets": ["Improved system performance by 30% through caching.", "Led a team of 4 to deliver X.", "Reduced costs by Y."] }`;
+
     const provider = process.env.AI_PROVIDER?.toLowerCase() || 'gemini';
     
     let rawResponse = '';
@@ -229,13 +243,16 @@ ${jdText}`;
          const openai = this.getOpenAIClient();
          const response = await openai.chat.completions.create({
            model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-           messages: [{ role: 'user', content: prompt }],
+           messages: [
+             { role: 'system', content: 'You are a career coach. Respond only in JSON.' },
+             { role: 'user', content: prompt }
+           ],
            response_format: { type: 'json_object' }
          });
          rawResponse = response.choices[0]?.message?.content || '{}';
       }
-    } catch (e) {
-      console.error('AI Bullet Generation Error:', e);
+    } catch (e: any) {
+      console.error('AI Bullet Generation Error:', e.message);
       return [];
     }
 

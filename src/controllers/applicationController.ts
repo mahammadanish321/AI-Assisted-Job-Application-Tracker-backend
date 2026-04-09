@@ -192,15 +192,18 @@ export const streamResumeBulletsAction = asyncHandler(async (req: AuthRequest, r
   res.setHeader('Connection', 'keep-alive');
 
   try {
+    const provider = process.env.AI_PROVIDER?.toUpperCase() || 'GEMINI';
+    console.log(`[StreamResume] Starting bullet generation via ${provider}`);
+    
     const stream = jobDescriptionService.streamResumeBullets(jdText, userExperience);
     for await (const bullet of stream) {
       res.write(`data: ${JSON.stringify({ bullet })}\n\n`);
     }
     res.write('data: [DONE]\n\n');
     res.end();
-  } catch (error) {
-    console.error('Streaming error:', error);
-    res.write(`data: ${JSON.stringify({ error: 'Streaming failed' })}\n\n`);
+  } catch (error: any) {
+    console.error('Streaming error:', error.message);
+    res.write(`data: ${JSON.stringify({ error: error.message || 'Streaming failed' })}\n\n`);
     res.end();
   }
 });
