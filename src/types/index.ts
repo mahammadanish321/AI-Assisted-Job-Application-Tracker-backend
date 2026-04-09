@@ -16,4 +16,5 @@ export interface IAIResumeResponse {
   skills_nice_to_have: string[];
   seniority: string;
   location: string;
+  salaryRange?: string;
 }

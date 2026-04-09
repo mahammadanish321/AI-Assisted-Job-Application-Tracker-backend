@@ -1,189 +1,149 @@
+import axios from 'axios';
 import OpenAI from 'openai';
 import { IAIResumeResponse } from '../types';
 
 class JobDescriptionService {
   private _openai: OpenAI | null = null;
 
-  private getClient(): OpenAI {
-    // If provider changes, we need to re-initialize the client
-    const isGemini = process.env.AI_PROVIDER === 'gemini';
+  private getOpenAIClient(): OpenAI {
     const apiKey = process.env.OPENAI_API_KEY;
-
-    if (!apiKey) {
-      throw new Error('OPENAI_API_KEY is not configured in .env');
-    }
-
-    // Always re-initialize or cache based on provider for true modularity
-    this._openai = new OpenAI({
-      apiKey: apiKey,
-      baseURL: isGemini
-        ? process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/'
-        : undefined, // Default OpenAI base URL
-    });
-
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not configured');
+    if (!this._openai) this._openai = new OpenAI({ apiKey });
     return this._openai;
   }
 
-  private getModel(): string {
-    const provider = process.env.AI_PROVIDER?.toLowerCase();
-    if (provider === 'gemini') return 'models/gemini-2.0-flash';
-    return 'gpt-4o-mini'; // Default to OpenAI's lightweight model
-  }
-
-  private async simulateDelay(ms: number = 2000) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  /** Safely extracts JSON from AI text with resilience for both providers */
-  private extractJSON(text: string): any {
-    const cleanedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    const match = cleanedText.match(/\{[\s\S]*\}/);
-    if (!match) {
-       console.error('FAILED TO PARSE AI RESPONSE:', text);
-       throw new Error('AI response did not contain a valid JSON object');
-    }
-    return JSON.parse(match[0]);
-  }
-
-  private buildJsonSystemPrompt(schema: string): string {
-    return `Analyze the provided job description and extract data strictly into this JSON schema:\n${schema}\n\nRules:\n- Output ONLY valid JSON\n- Do not include markdown code blocks or explanations.`;
-  }
-
   /**
-   * Universal AI request wrapper with retries for 429 Rate Limiting
+   * Use Gemini to extract job details
    */
-  private async callAIWithRetry(messages: any[], isStreaming: boolean = false): Promise<any> {
-    const maxRetries = 2;
-    let attempts = 0;
+  private async extractWithGemini(jdText: string): Promise<IAIResumeResponse> {
+    const schema = `{ "company_name": string, "job_role": string, "remote_or_not": string, "money": string }`;
+    const prompt = `Extract these 4 things from the Job Description below and return as JSON:\n1. company_name\n2. job_role\n3. remote_or_not\n4. money\n\nJSON SCHEMA: ${schema}\n\nJD TEXT:\n${jdText}`;
+    
+    const rawResponse = await this.callGeminiRaw(prompt);
+    const data = this.cleanAndParseJSON(rawResponse);
 
-    while (attempts <= maxRetries) {
-      try {
-        const response = await this.getClient().chat.completions.create({
-          model: this.getModel(),
-          messages,
-          response_format: { type: "json_object" },
-          stream: isStreaming,
-        }, { timeout: 30000 });
+    return {
+      company: data.company_name || 'Not Found',
+      role: data.job_role || 'Not Found',
+      location: data.remote_or_not || 'Not Found',
+      salaryRange: data.money || 'Not Specified',
+      seniority: 'Not Specified',
+      skills_required: [],
+      skills_nice_to_have: []
+    };
+  }
 
-        return response;
-      } catch (error: any) {
-        attempts++;
-        const isRateLimit = error.status === 429 || error.message?.includes('429');
-        
-        if (isRateLimit && attempts <= maxRetries) {
-          console.warn(`[AI SERVICE] Rate limit hit (429). Retry attempt ${attempts}/${maxRetries} after delay...`);
-          await this.simulateDelay(2000 * attempts); // Exponential backoff (2s, 4s)
-          continue;
-        }
-        
-        console.error(`[AI SERVICE ERROR] Attempt ${attempts} failed:`, error.message);
-        throw error;
+  /**
+   * Use OpenAI to extract job details
+   */
+  private async extractWithOpenAI(jdText: string): Promise<IAIResumeResponse> {
+    const schema = `{ "company_name": string, "job_role": string, "remote_or_not": string, "money": string }`;
+    const prompt = `Extract these 4 things from the Job Description below and return as JSON:\n1. company_name\n2. job_role\n3. remote_or_not\n4. money\n\nJSON SCHEMA: ${schema}\n\nJD TEXT:\n${jdText}`;
+
+    const openai = this.getOpenAIClient();
+    const response = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'Extract strictly to JSON format.' },
+        { role: 'user', content: prompt }
+      ],
+    });
+
+    const rawResponse = response.choices[0]?.message?.content || '{}';
+    const data = this.cleanAndParseJSON(rawResponse);
+
+    return {
+      company: data.company_name || 'Not Found',
+      role: data.job_role || 'Not Found',
+      location: data.remote_or_not || 'Not Found',
+      salaryRange: data.money || 'Not Specified',
+      seniority: 'Not Specified',
+      skills_required: [],
+      skills_nice_to_have: []
+    };
+  }
+
+  /**
+   * RAW GEMINI CALL (v1 Stable)
+   */
+  private async callGeminiRaw(prompt: string): Promise<string> {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
+    const model = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    const response = await axios.post(url, {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 1024,
       }
+    }, {
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const resultText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!resultText) throw new Error('Gemini returned an empty response');
+    return resultText;
+  }
+
+  private cleanAndParseJSON(text: string): any {
+    try {
+      const cleanedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      const start = cleanedText.indexOf('{');
+      const end = cleanedText.lastIndexOf('}');
+      if (start === -1 || end === -1) return {};
+      return JSON.parse(cleanedText.substring(start, end + 1));
+    } catch (e) {
+      return {};
     }
   }
 
   /**
-   * Extracts structured information from a job description text.
+   * Main entry point to extract job details
    */
   async extractJobDetails(jdText: string): Promise<IAIResumeResponse> {
     if (process.env.USE_MOCK === 'true') {
-      await this.simulateDelay(1500);
-      return {
-        company: "Mock AI Solutions Inc.",
-        role: "Senior AI Integration Engineer",
-        skills_required: ["React", "TypeScript", "Node.js", "OpenAI API"],
-        skills_nice_to_have: ["Docker", "AWS", "GraphQL"],
-        seniority: "Senior",
-        location: "Remote",
-      };
+      return { company: "Mock Co.", role: "Developer", skills_required: [], skills_nice_to_have: [], seniority: "Mid", location: "Remote" };
     }
 
-    const schema = `{ "company": string, "role": string, "skills_required": string[], "skills_nice_to_have": string[], "seniority": string, "location": string }`;
+    const provider = process.env.AI_PROVIDER?.toLowerCase() || 'gemini';
 
-    const response = await this.callAIWithRetry([
-      { role: 'system', content: this.buildJsonSystemPrompt(schema) },
-      { role: 'user', content: `Extract details from this JD:\n\n${jdText}` },
-    ]);
-
-    const content = response.choices[0]?.message?.content;
-    if (!content) throw new Error('AI returned an empty response');
-
-    return this.extractJSON(content);
+    if (provider === 'gemini') {
+      return await this.extractWithGemini(jdText);
+    } else {
+      return await this.extractWithOpenAI(jdText);
+    }
   }
 
   /**
-   * Generates resume bullet points (Non-Streaming)
+   * Generate bullets (refactored to use provider-specific logic)
    */
   async generateResumeBullets(jdText: string, userExperience: string): Promise<string[]> {
-    if (process.env.USE_MOCK === 'true') {
-      return ["Led development of microservices.", "Optimized API throughput by 40%."];
+    const prompt = `Generate 3 bullet points for a resume based on this JD:\n${jdText}\n\nExperience: ${userExperience}\nFormat: Return as a JSON array of strings in a key called "bullets".`;
+    const provider = process.env.AI_PROVIDER?.toLowerCase() || 'gemini';
+    
+    let rawResponse = '';
+    if (provider === 'gemini') {
+       rawResponse = await this.callGeminiRaw(prompt);
+    } else {
+       const openai = this.getOpenAIClient();
+       const response = await openai.chat.completions.create({
+         model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+         messages: [{ role: 'user', content: prompt }],
+       });
+       rawResponse = response.choices[0]?.message?.content || '{}';
     }
 
-    const schema = `{ "bullets": string[] }`;
-    const response = await this.callAIWithRetry([
-      { role: 'system', content: this.buildJsonSystemPrompt(schema) + "\nGenerate 3-5 specific bullet points." },
-      { role: 'user', content: `JD:\n${jdText}\n\nExperience:\n${userExperience}` },
-    ]);
-
-    const content = response.choices[0]?.message?.content;
-    if (!content) throw new Error('AI returned an empty response');
-    const parsed = this.extractJSON(content);
-    return parsed.bullets;
+    const data = this.cleanAndParseJSON(rawResponse);
+    return data.bullets || [];
   }
 
-  /**
-   * Streaming version for Resume Bullets
-   */
   async *streamResumeBullets(jdText: string, userExperience: string) {
-    if (process.env.USE_MOCK === 'true') {
-      const mockBullets = ["Optimized frontend state management using React Query.", "Integrated OpenAI streaming for real-time feedback."];
-      for (const bullet of mockBullets) {
-        await this.simulateDelay(500);
-        yield bullet;
-      }
-      return;
-    }
-
-    const schema = `{ "bullets": string[] }`;
-    
-    // We don't use the retry wrapper for streaming directly as streaming state is harder to reset
-    const stream = await this.getClient().chat.completions.create({
-      model: this.getModel(),
-      messages: [
-        { role: 'system', content: this.buildJsonSystemPrompt(schema) + "\nGenerate 3-5 specific resume bullet points." },
-        { role: 'user', content: `JD:\n${jdText}\n\nExp:\n${userExperience}` },
-      ],
-      stream: true,
-    });
-
-    let currentText = '';
-    let lastYieldedBullets: string[] = [];
-
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content || '';
-      currentText += content;
-
-      try {
-        const match = currentText.match(/\{[\s\S]*\}/);
-        if (match) {
-           let jsonToParse = match[0];
-           if (jsonToParse.includes('"bullets": [')) {
-              const bulletsPart = jsonToParse.split('"bullets": [')[1];
-              const bullets = bulletsPart.split(',').map(b => b.trim().replace(/^"/, '').replace(/"$/, '').replace(/\]$/, '').replace(/\}$/, '')).filter(b => b.length > 5);
-              
-              for (const bullet of bullets) {
-                 if (!lastYieldedBullets.includes(bullet)) {
-                    yield bullet;
-                    lastYieldedBullets.push(bullet);
-                 }
-              }
-           }
-        }
-      } catch (e) {
-         // Silently wait for more buffer
-      }
-    }
+    const bullets = await this.generateResumeBullets(jdText, userExperience);
+    for (const b of bullets) yield b;
   }
 }
 
 export default new JobDescriptionService();
+

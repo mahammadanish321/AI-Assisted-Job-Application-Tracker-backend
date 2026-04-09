@@ -169,7 +169,10 @@ export const parseJobDescriptionAction = asyncHandler(async (req: AuthRequest, r
   }
 
   const extractedDetails = await jobDescriptionService.extractJobDetails(jdText);
-  res.json(extractedDetails);
+  res.json({
+    ...extractedDetails,
+    provider: (process.env.AI_PROVIDER || 'gemini').toUpperCase()
+  });
 });
 /**
  * @desc    Stream resume bullets using AI
