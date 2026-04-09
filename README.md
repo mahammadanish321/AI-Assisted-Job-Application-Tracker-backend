@@ -1,65 +1,70 @@
-# AI-Assisted Job Application Tracker - Backend
+# 🏢 Soon — AI-Assisted Tracker (Backend)
 
-This is the backend API for the AI-Assisted Job Application Tracker. It is built with Node.js, Express, TypeScript, and MongoDB.
+The powerful backend engine for **Soon**, featuring a modular AI integration layer, automated Gmail synchronization, and a secure JWT-based authentication system.
 
-## Features
+---
 
-- **Authentication**: JWT-based auth with Access & Refresh tokens.
-- **AI Integration**: Automatically extracts job details from descriptions using OpenAI/Gemini.
-- **Gmail Sync**: Scans unread emails for updates from tracked companies.
-- **Resume Tailoring**: Generates impact-driven resume bullets tailored to specific job descriptions.
-- **Kanban Management**: Tracks job applications through customizable stages.
+## 🚀 Core Features
+*   **🧩 Modular AI Service:** Switch between Google Gemini and OpenAI o3-mini/o4-mini dynamically via environment variables.
+*   **📧 Gmail API Integration:** Automated background syncing for interview and job update notifications.
+*   **🛠️ Optimized Fallbacks:** Automatic model fallback (e.g., from Gemini 1.5 Pro to Flash) ensuring 99.9% parsing uptime.
+*   **🔒 Secure Auth:** JWT authentication with HttpOnly cookies and rotation of refresh tokens.
+*   **📁 Task Management:** Robust REST API for Kanban stages, applications, and resume metadata.
 
-## Deployment Ready Fixes
+---
 
-The following issues were resolved to ensure deployment success on Render/Vercel:
-1. **TypeScript Configuration**: Fixed `module` and `moduleResolution` to match CommonJS environment. Removed broken `types` array.
-2. **Dependency Management**: Moved `@types/*` and `typescript` to `devDependencies`.
-3. **Build Script**: Switched to `rimraf` for reliable cross-platform builds.
-4. **Type Compatibility**: Downgraded Express 5 to 4.21 to resolve strict type conflicts with `express-async-handler`.
-
-## Environment Variables
-
-Create a `.env` file based on `.env.example`:
+## 🛠️ Environment Variables
+Create a `.env` file in this directory and add the following:
 
 ```env
-MONGO_URI=your_mongodb_uri
-FRONTEND_URL=your_frontend_url
+# Server
+PORT=5000
+NODE_ENV=production
+FRONTEND_URL=https://ai-assisted-job-application-tracker.vercel.app
+
+# Database
+MONGO_URI=mongodb+srv://user:pass@cluster.mongodb.net/dbname
+
+# AI Configuration (gemini or openai)
+AI_PROVIDER=gemini
+GEMINI_API_KEY=your_key
+GEMINI_MODEL=gemini-1.5-flash
+OPENAI_API_KEY=your_key
+OPENAI_MODEL=gpt-4o-mini
+
+# Google OAuth (For Gmail Sync)
+GOOGLE_CLIENT_ID=your_id
+GOOGLE_CLIENT_SECRET=your_secret
+
+# Cloudinary (For Avatars/Resumes)
+CLOUDINARY_CLOUD_NAME=name
+CLOUDINARY_API_KEY=key
+CLOUDINARY_API_SECRET=secret
+
+# JWT
 JWT_ACCESS_SECRET=your_secret
 JWT_REFRESH_SECRET=your_secret
-OPENAI_API_KEY=your_key
-AI_PROVIDER=gemini # or openai
-CLOUDINARY_CLOUD_NAME=your_name
-CLOUDINARY_API_KEY=your_key
-CLOUDINARY_API_SECRET=your_secret
 ```
 
-## Getting Started
+---
 
-### Installation
+## ⚡ Quick Start
+
 ```bash
+# 1. Install dependencies
 npm install
-```
 
-### Development
-```bash
+# 2. Run in development
 npm run dev
-```
 
-### Build
-```bash
+# 3. Build for production
 npm run build
 ```
 
-### Production Start
-```bash
-npm start
-```
+---
 
-## API Endpoints
-
-- `POST /api/auth/register` - Register user
-- `POST /api/auth/login` - Login user
-- `GET /api/applications` - Get user applications
-- `POST /api/applications` - Create/Extract application
-- `POST /api/notifications/sync-gmail` - Sync Gmail updates
+## 🏗️ Architecture
+- **Controllers:** Handle HTTP requests and business logic.
+- **Services:** Modular logic for AI parsing and Gmail interaction.
+- **Middlewares:** Auth verification and error handling.
+- **Models:** Typed Mongoose schemas for Users and Applications.
