@@ -15,9 +15,24 @@ class JobDescriptionService {
   /**
    * Use Gemini to extract job details
    */
-  private async extractWithGemini(jdText: string): Promise<IAIResumeResponse> {
+  /**
+   * Use Gemini to extract job details
+   */
+  private async extractWithGemini(jdText: string): Promise<IAIResumeResponse & { provider?: string }> {
     const schema = `{ "company_name": string, "job_role": string, "remote_or_not": string, "money": string }`;
-    const prompt = `Extract these 4 things from the Job Description below and return as JSON:\n1. company_name\n2. job_role\n3. remote_or_not\n4. money\n\nJSON SCHEMA: ${schema}\n\nJD TEXT:\n${jdText}`;
+    const prompt = `You are a professional recruiting assistant. Extract the following details from the Job Description text below. 
+Return ONLY a valid JSON object. No other text, no markdown code blocks.
+
+FIELDS:
+1. company_name (e.g. "Google")
+2. job_role (e.g. "Frontend Developer")
+3. remote_or_not (e.g. "Remote", "San Francisco, CA")
+4. money (e.g. "$120,000 - $160,000" or "Negotiable")
+
+JSON SCHEMA: ${schema}
+
+JOB DESCRIPTION TEXT:
+${jdText}`;
     
     try {
       const rawResponse = await this.callGeminiRaw(prompt);
@@ -30,10 +45,11 @@ class JobDescriptionService {
         salaryRange: data.money || 'Not Specified',
         seniority: 'Not Specified',
         skills_required: [],
-        skills_nice_to_have: []
+        skills_nice_to_have: [],
+        provider: 'GEMINI'
       };
-    } catch (error) {
-      console.error('Gemini Extraction Error:', error);
+    } catch (error: any) {
+      console.error('Gemini Extraction Error:', error.message);
       return {
         company: 'Extraction Failed',
         role: 'Check JD Text',
@@ -41,7 +57,8 @@ class JobDescriptionService {
         salaryRange: 'N/A',
         seniority: 'N/A',
         skills_required: [],
-        skills_nice_to_have: []
+        skills_nice_to_have: [],
+        provider: 'GEMINI (Error)'
       };
     }
   }
@@ -49,92 +66,125 @@ class JobDescriptionService {
   /**
    * Use OpenAI to extract job details
    */
-  private async extractWithOpenAI(jdText: string): Promise<IAIResumeResponse> {
+  private async extractWithOpenAI(jdText: string): Promise<IAIResumeResponse & { provider?: string }> {
     const schema = `{ "company_name": string, "job_role": string, "remote_or_not": string, "money": string }`;
     const prompt = `Extract these 4 things from the Job Description below and return as JSON:\n1. company_name\n2. job_role\n3. remote_or_not\n4. money\n\nJSON SCHEMA: ${schema}\n\nJD TEXT:\n${jdText}`;
 
-    const openai = this.getOpenAIClient();
-    const response = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'Extract strictly to JSON format.' },
-        { role: 'user', content: prompt }
-      ],
-      response_format: { type: 'json_object' }
-    });
+    try {
+      const openai = this.getOpenAIClient();
+      const response = await openai.chat.completions.create({
+        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'Extract strictly to JSON format.' },
+          { role: 'user', content: prompt }
+        ],
+        response_format: { type: 'json_object' }
+      });
 
-    const rawResponse = response.choices[0]?.message?.content || '{}';
-    const data = JSON.parse(rawResponse);
+      const rawResponse = response.choices[0]?.message?.content || '{}';
+      const data = JSON.parse(rawResponse);
 
-    return {
-      company: data.company_name || 'Not Found',
-      role: data.job_role || 'Not Found',
-      location: data.remote_or_not || 'Not Found',
-      salaryRange: data.money || 'Not Specified',
-      seniority: 'Not Specified',
-      skills_required: [],
-      skills_nice_to_have: []
-    };
+      return {
+        company: data.company_name || 'Not Found',
+        role: data.job_role || 'Not Found',
+        location: data.remote_or_not || 'Not Found',
+        salaryRange: data.money || 'Not Specified',
+        seniority: 'Not Specified',
+        skills_required: [],
+        skills_nice_to_have: [],
+        provider: 'OPENAI'
+      };
+    } catch (error) {
+      return {
+        company: 'Extraction Failed',
+        role: 'Check JD Text',
+        location: 'N/A',
+        salaryRange: 'N/A',
+        seniority: 'N/A',
+        skills_required: [],
+        skills_nice_to_have: [],
+        provider: 'OPENAI (Error)'
+      };
+    }
   }
 
   /**
    * RAW GEMINI CALL with Robust Multi-Model Fallback
    */
   private async callGeminiRaw(prompt: string): Promise<string> {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
-
-    // List of models to try in order of stability and performance
+    const { GoogleGenerativeAI } = require('@google/generative-ai');
+    const rawApiKey = process.env.GEMINI_API_KEY;
+    if (!rawApiKey) throw new Error('GEMINI_API_KEY is not configured');
+    
+    const apiKey = rawApiKey.trim();
+    const genAI = new GoogleGenerativeAI(apiKey);
+    
+    // Based on ListModels check, 1.5 is replaced by newer versions like 2.5 and 2.0
     const modelsToTry = [
-      process.env.GEMINI_MODEL || 'gemini-1.5-flash',
-      'gemini-1.5-flash-latest',
-      'gemini-2.0-flash-exp',
-      'gemini-1.5-pro'
-    ].filter((v, i, a) => a.indexOf(v) === i); // Unique models
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-flash-latest',
+      'gemini-2.5-pro'
+    ];
 
     let lastError: any = null;
 
-    for (const model of modelsToTry) {
+    for (const modelName of modelsToTry) {
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        
-        const response = await axios.post(url, {
-          contents: [{ parts: [{ text: prompt }] }],
+        console.log(`[Gemini] Attempting extraction with model: ${modelName}`);
+        const model = genAI.getGenerativeModel({ 
+          model: modelName,
           generationConfig: {
-            temperature: 0.1, // Lower temperature for more consistent JSON
-            maxOutputTokens: 1024,
-            responseMimeType: "application/json" // Force JSON output
-          },
-          safetySettings: [
-            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-          ]
-        }, {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 10000 // 10s timeout per model
+            temperature: 0.1,
+            maxOutputTokens: 2048,
+          }
         });
 
-        const resultText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (resultText) return resultText;
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+        
+        if (text) return text;
       } catch (error: any) {
-        console.warn(`[Gemini Fallback] Model ${model} failed. Trying next...`);
+        console.warn(`[Gemini SDK Fallback] Model ${modelName} failed: ${error.message}`);
         lastError = error;
+        
+        // If we get a 404, we might be using the wrong endpoint or model name
+        // The SDK usually handles this, but we keep trying other models
       }
     }
 
-    throw new Error(`Gemini failed all fallback models: ${lastError?.message || 'Unknown Error'}`);
+    // FINAL FALLBACK: Raw Axios call to V1 endpoint (non-beta)
+    try {
+      console.log(`[Gemini] Attempting final fallback with Raw Axios (V1 endpoint)`);
+      const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const response = await axios.post(url, {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1 }
+      }, { timeout: 10000 });
+      
+      const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) return text;
+    } catch (e: any) {
+      console.error(`[Gemini] Final Axios Fallback failed: ${e.message}`);
+    }
+
+    throw new Error(`Gemini failed all models (SDK & Axios). Last error: ${lastError?.message || 'Unknown'}`);
   }
 
   private cleanAndParseJSON(text: string): any {
     try {
-      const cleanedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-      const start = cleanedText.indexOf('{');
-      const end = cleanedText.lastIndexOf('}');
+      // Remove any markdown code block indicators
+      let clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      
+      // Find the first { and last } to isolate the JSON object
+      const start = clean.indexOf('{');
+      const end = clean.lastIndexOf('}');
       if (start === -1 || end === -1) return {};
-      return JSON.parse(cleanedText.substring(start, end + 1));
+      
+      return JSON.parse(clean.substring(start, end + 1));
     } catch (e) {
+      console.error('JSON Parse Error for text:', text);
       return {};
     }
   }
@@ -142,9 +192,17 @@ class JobDescriptionService {
   /**
    * Main entry point to extract job details
    */
-  async extractJobDetails(jdText: string): Promise<IAIResumeResponse> {
+  async extractJobDetails(jdText: string): Promise<IAIResumeResponse & { provider?: string }> {
     if (process.env.USE_MOCK === 'true') {
-      return { company: "Mock Co.", role: "Developer", skills_required: [], skills_nice_to_have: [], seniority: "Mid", location: "Remote" };
+      return { 
+        company: "Mock Co.", 
+        role: "Developer", 
+        skills_required: [], 
+        skills_nice_to_have: [], 
+        seniority: "Mid", 
+        location: "Remote",
+        provider: 'MOCK'
+      };
     }
 
     const provider = process.env.AI_PROVIDER?.toLowerCase() || 'gemini';

@@ -18,32 +18,39 @@ class GmailService {
       // Only include valid string companies
       const applications = await Application.find({ user: userId as any });
       
+      const discardWords = ['the', 'inc', 'llc', 'corp', 'corporation', 'company', 'limited', 'ltd', 'a', 'an', 'and'];
+      
       const trackedCompanies = [...new Set(
         applications
           .map(app => app.company?.trim())
-          .filter(company => company && company.length > 2)
+          .filter(company => company && company.length > 1)
       )];
 
       if (trackedCompanies.length === 0) {
         return { message: 'No tracked companies found to scan.', count: 0 };
       }
 
-      // 34-39: Prepare a Gmail search query for these companies.
-      const fromQueries = trackedCompanies.map(c => {
-        // Broad match for the company name in 'from' field
-        const cleanName = c.replace(/[^a-zA-Z0-9 ]/g, '').toLowerCase(); 
-        const firstWord = cleanName.split(' ')[0];
-        return `from:${firstWord}`;
+      // Prepare a Gmail search query. 
+      // We look for unread emails from the last 30 days that mention the companies.
+      // We use the full company name in quotes for exact matching if possible.
+      const companyTerms = trackedCompanies.map(c => {
+         const words = c.toLowerCase().split(/\s+/).filter(w => !discardWords.includes(w));
+         // If we have specific words left, use them, otherwise use the original name
+         const searchStr = words.length > 0 ? words[0] : c;
+         return `"${searchStr}"`;
       });
       
-      const queryString = `is:unread {${fromQueries.join(' ')}}`;
-      console.log(`[GmailSync] Query: "${queryString}" for user ${userId}`);
+      // Gmail query limits apply, so we chunk or limit if too many
+      const limitedTerms = companyTerms.slice(0, 20); 
+      const queryString = `is:unread after:30d {${limitedTerms.join(' ')}}`;
+      
+      console.log(`[GmailSync] Querying Gmail for user ${userId}: ${queryString}`);
 
       // 2. Fetch unread messages matching the query
       const response = await gmail.users.messages.list({
         userId: 'me',
         q: queryString,
-        maxResults: 50, // Limit to recent 50
+        maxResults: 25, // Recent 25 is safer for performance
       });
 
       const messages = response.data.messages || [];
@@ -55,62 +62,57 @@ class GmailService {
       const targetKeywords = [
         'interview', 'status', 'assessment', 'offer', 'next steps', 
         'update', 'rejection', 'unfortunately', 'congratulations',
-        'application', 'scheduling', 'test', 'assignment'
+        'application', 'scheduling', 'test', 'assignment', 'hiring',
+        'recruiter', 'portal', 'feedback'
       ];
 
-      // 3. Process each message
-      for (const msg of messages) {
-        if (!msg.id) continue;
+      // 3. Process each message using parallel fetching for performance
+      const syncTasks = messages.map(async (msg) => {
+        if (!msg.id) return;
 
-        // Check if we already notified about this exact email
+        // Check cache/db
         const existingNotification = await Notification.findOne({
           user: userId,
           'metadata.messageId': msg.id
         });
+        if (existingNotification) return;
 
-        if (existingNotification) continue;
-
-        // Fetch snippets/details
+        // Fetch meta
         const msgDetails = await gmail.users.messages.get({
           userId: 'me',
           id: msg.id,
-          format: 'metadata', // metadata has the snippet and headers
+          format: 'metadata',
           metadataHeaders: ['From', 'Subject', 'Date']
         });
 
         const snippet = msgDetails.data.snippet || '';
         const headers = msgDetails.data.payload?.headers || [];
-        const subjectHeader = headers.find(h => h.name?.toLowerCase() === 'subject');
-        const fromHeader = headers.find(h => h.name?.toLowerCase() === 'from');
+        const subject = headers.find(h => h.name?.toLowerCase() === 'subject')?.value || 'No Subject';
+        const from = headers.find(h => h.name?.toLowerCase() === 'from')?.value || 'Unknown Sender';
 
-        const subject = subjectHeader?.value || 'No Subject';
-        const from = fromHeader?.value || 'Unknown Sender';
-
-        // Check for high-priority keywords in snippet or subject
         const combinedText = `${subject} ${snippet}`.toLowerCase();
         const hasKeyword = targetKeywords.some(kw => combinedText.includes(kw));
 
-        // Attempt to extract the company name that matched
-        const matchedCompany = trackedCompanies.find(c => {
-           const cleanName = c.replace(/[^a-zA-Z0-9]/g, '').toLowerCase(); 
-           return from.toLowerCase().includes(cleanName);
-        }) || from?.split('<')[0]?.trim() || 'a tracked company';
-
         if (hasKeyword) {
-          // Create Notification
+          const matchedCompany = trackedCompanies.find(c => {
+             const cleanName = c.replace(/[^a-zA-Z0-9]/g, '').toLowerCase(); 
+             return from.toLowerCase().includes(cleanName);
+          }) || from?.split('<')[0]?.trim() || 'a tracked company';
+
           await Notification.create({
             user: userId,
             type: 'EMAIL_UPDATE',
             message: `New Update from ${matchedCompany}: ${subject} - "${snippet.substring(0, 80)}..."`,
             link: '/dashboard', 
-            metadata: {
-              messageId: msg.id,
-              from: from
-            }
+            metadata: { messageId: msg.id, from }
           });
-          newNotificationsCount++;
+          return true;
         }
-      }
+        return false;
+      });
+
+      const results = await Promise.all(syncTasks);
+      newNotificationsCount = results.filter(r => r === true).length;
 
       return { message: 'Sync complete', count: newNotificationsCount };
     } catch (error: any) {

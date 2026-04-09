@@ -171,7 +171,7 @@ export const parseJobDescriptionAction = asyncHandler(async (req: AuthRequest, r
   const extractedDetails = await jobDescriptionService.extractJobDetails(jdText);
   res.json({
     ...extractedDetails,
-    provider: (process.env.AI_PROVIDER || 'gemini').toUpperCase()
+    provider: extractedDetails.provider || (process.env.AI_PROVIDER || 'gemini').toUpperCase()
   });
 });
 /**
