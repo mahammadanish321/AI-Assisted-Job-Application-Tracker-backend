@@ -42,7 +42,8 @@ class GmailService {
       
       // Gmail query limits apply, so we chunk or limit if too many
       const limitedTerms = companyTerms.slice(0, 20); 
-      const queryString = `is:unread after:30d {${limitedTerms.join(' ')}}`;
+      // FIX: after:30d is not valid Gmail syntax, it should be newer_than:30d
+      const queryString = `is:unread newer_than:30d (${limitedTerms.join(' OR ')})`;
       
       console.log(`[GmailSync] Querying Gmail for user ${userId}: ${queryString}`);
 
@@ -54,6 +55,8 @@ class GmailService {
       });
 
       const messages = response.data.messages || [];
+      console.log(`[GmailSync] Found ${messages.length} messages matching the query.`);
+      
       if (messages.length === 0) {
         return { message: 'No relevant emails found.', count: 0 };
       }
@@ -61,12 +64,11 @@ class GmailService {
       let newNotificationsCount = 0;
       const targetKeywords = [
         'interview', 'status', 'assessment', 'offer', 'next steps', 
-        'update', 'rejection', 'unfortunately', 'congratulations',
+        'update', 'rejection', 'unfortunately', 'congratulations', 'congratulation',
         'application', 'scheduling', 'test', 'assignment', 'hiring',
         'recruiter', 'portal', 'feedback'
       ];
 
-      // 3. Process each message using parallel fetching for performance
       const syncTasks = messages.map(async (msg) => {
         if (!msg.id) return;
 
@@ -75,7 +77,10 @@ class GmailService {
           user: userId,
           'metadata.messageId': msg.id
         });
-        if (existingNotification) return;
+        if (existingNotification) {
+          console.log(`[GmailSync] Skipping message ${msg.id} - already notified.`);
+          return;
+        }
 
         // Fetch meta
         const msgDetails = await gmail.users.messages.get({
@@ -87,16 +92,26 @@ class GmailService {
 
         const snippet = msgDetails.data.snippet || '';
         const headers = msgDetails.data.payload?.headers || [];
-        const subject = headers.find(h => h.name?.toLowerCase() === 'subject')?.value || 'No Subject';
-        const from = headers.find(h => h.name?.toLowerCase() === 'from')?.value || 'Unknown Sender';
+        const subject = (headers.find(h => h.name?.toLowerCase() === 'subject')?.value || 'No Subject').toLowerCase();
+        const from = (headers.find(h => h.name?.toLowerCase() === 'from')?.value || 'Unknown Sender').toLowerCase();
+
+        console.log(`[GmailSync] Processing message from: ${from}, subject: ${subject}`);
 
         const combinedText = `${subject} ${snippet}`.toLowerCase();
-        const hasKeyword = targetKeywords.some(kw => combinedText.includes(kw));
+        const hasKeyword = targetKeywords.some(kw => {
+           const match = combinedText.includes(kw.toLowerCase());
+           if (match) console.log(`[GmailSync] Keyword Match: "${kw}" found in message.`);
+           return match;
+        });
 
         if (hasKeyword) {
+          // FUZZY MATCHING
           const matchedCompany = trackedCompanies.find(c => {
              const cleanName = c.replace(/[^a-zA-Z0-9]/g, '').toLowerCase(); 
-             return from.toLowerCase().includes(cleanName);
+             const firstWord = cleanName.split(' ')[0] || cleanName;
+             const isMatch = from.includes(firstWord) || subject.includes(firstWord);
+             if (isMatch) console.log(`[GmailSync] Company Match: "${c}" matched via word "${firstWord}"`);
+             return isMatch;
           }) || from?.split('<')[0]?.trim() || 'a tracked company';
 
           await Notification.create({
@@ -107,6 +122,8 @@ class GmailService {
             metadata: { messageId: msg.id, from }
           });
           return true;
+        } else {
+          console.log(`[GmailSync] No key words found in message from ${from}`);
         }
         return false;
       });
