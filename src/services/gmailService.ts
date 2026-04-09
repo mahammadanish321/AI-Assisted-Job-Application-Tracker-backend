@@ -28,16 +28,16 @@ class GmailService {
         return { message: 'No tracked companies found to scan.', count: 0 };
       }
 
-      // Prepare a Gmail search query for these companies.
-      // E.g. "is:unread {from:mockaisolutions from:google from:microsoft}"
-      // To simplify matching, we take the first word or clean string of the company
+      // 34-39: Prepare a Gmail search query for these companies.
       const fromQueries = trackedCompanies.map(c => {
-        // Remove spaces and special chars, take first distinct chunk for broader match
-        const cleanName = c.replace(/[^a-zA-Z0-9]/g, '').toLowerCase(); 
-        return `from:${cleanName}`;
+        // Broad match for the company name in 'from' field
+        const cleanName = c.replace(/[^a-zA-Z0-9 ]/g, '').toLowerCase(); 
+        const firstWord = cleanName.split(' ')[0];
+        return `from:${firstWord}`;
       });
       
       const queryString = `is:unread {${fromQueries.join(' ')}}`;
+      console.log(`[GmailSync] Query: "${queryString}" for user ${userId}`);
 
       // 2. Fetch unread messages matching the query
       const response = await gmail.users.messages.list({
@@ -52,7 +52,11 @@ class GmailService {
       }
 
       let newNotificationsCount = 0;
-      const targetKeywords = ['interview', 'status', 'assessment', 'offer', 'next steps', 'update'];
+      const targetKeywords = [
+        'interview', 'status', 'assessment', 'offer', 'next steps', 
+        'update', 'rejection', 'unfortunately', 'congratulations',
+        'application', 'scheduling', 'test', 'assignment'
+      ];
 
       // 3. Process each message
       for (const msg of messages) {
