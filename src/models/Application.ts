@@ -10,6 +10,16 @@ export interface IApplicationDoc extends Document {
   salaryRange?: string;
   color?: string; // Application-specific color
   user: mongoose.Schema.Types.ObjectId;
+  
+  // New Fields
+  techStack?: string;
+  location?: string;
+  deadline?: Date;
+  startDate?: Date;
+  isInternship?: boolean;
+  expectedDuration?: string;
+  strategicNotes?: string;
+  companyLogo?: string;
 }
 
 const applicationSchema = new Schema(
@@ -50,6 +60,15 @@ const applicationSchema = new Schema(
       type: String,
       default: () => '#' + Math.floor(Math.random()*16777215).toString(16)
     },
+    // Advanced Tracking Fields
+    techStack: String,
+    location: String,
+    deadline: Date,
+    startDate: Date,
+    isInternship: { type: Boolean, default: false },
+    expectedDuration: String,
+    strategicNotes: String,
+    companyLogo: String,
   },
   {
     timestamps: true,

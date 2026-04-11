@@ -37,9 +37,9 @@ export const getApplicationById = asyncHandler(async (req: AuthRequest, res: Res
  * @access  Private
  */
 export const createApplication = asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { jdLink, jdText, notes, salaryRange, status, company, role, color } = req.body;
+  const { jdLink, jdText, notes, salaryRange, status, company, role, color, techStack, location, deadline, startDate, isInternship, expectedDuration, strategicNotes, companyLogo } = req.body;
 
-  let extractedDetails: any = { company, role, skills_required: [], skills_nice_to_have: [], seniority: '', location: '' };
+  let extractedDetails: any = { company, role, skills_required: [], skills_nice_to_have: [], seniority: '', location: location || '' };
 
   // If company & role are already provided (pre-parsed), skip AI extraction
   if (!company || !role) {
@@ -59,19 +59,18 @@ export const createApplication = asyncHandler(async (req: AuthRequest, res: Resp
     status: status || 'Applied',
     salaryRange,
     color,
+    // Advanced Tracking
+    techStack,
+    location: extractedDetails.location || location,
+    deadline,
+    startDate,
+    isInternship,
+    expectedDuration,
+    strategicNotes,
+    companyLogo
   });
 
   const createdApplication = await application.save();
-
-  /*
-  // Create notification
-  await Notification.create({
-    user: req.user?._id,
-    type: 'APPLICATION_CREATED',
-    message: `New application created for ${createdApplication.company} - ${createdApplication.role}`,
-    link: `/dashboard`,
-  });
-  */
   
   res.status(201).json({
     application: createdApplication,
@@ -93,7 +92,6 @@ export const updateApplication = asyncHandler(async (req: AuthRequest, res: Resp
   const application = await Application.findById(req.params.id);
 
   if (application && application.user.toString() === req.user?._id.toString()) {
-    const oldStatus = application.status;
     application.company = req.body.company || application.company;
     application.role = req.body.role || application.role;
     application.jdLink = req.body.jdLink || application.jdLink;
@@ -101,20 +99,19 @@ export const updateApplication = asyncHandler(async (req: AuthRequest, res: Resp
     application.status = req.body.status || application.status;
     application.salaryRange = req.body.salaryRange || application.salaryRange;
     application.color = req.body.color || application.color;
+    
+    // Update advanced tracking fields (allow null/empty values)
+    application.techStack = req.body.techStack !== undefined ? req.body.techStack : application.techStack;
+    application.location = req.body.location !== undefined ? req.body.location : application.location;
+    application.deadline = req.body.deadline !== undefined ? req.body.deadline : application.deadline;
+    application.startDate = req.body.startDate !== undefined ? req.body.startDate : application.startDate;
+    application.isInternship = req.body.isInternship !== undefined ? req.body.isInternship : application.isInternship;
+    application.expectedDuration = req.body.expectedDuration !== undefined ? req.body.expectedDuration : application.expectedDuration;
+    application.strategicNotes = req.body.strategicNotes !== undefined ? req.body.strategicNotes : application.strategicNotes;
+    application.companyLogo = req.body.companyLogo !== undefined ? req.body.companyLogo : application.companyLogo;
 
     const updatedApplication = await application.save();
 
-    /*
-    // Create notification if status changed
-    if (req.body.status && req.body.status !== oldStatus) {
-      await Notification.create({
-        user: req.user?._id,
-        type: 'STATUS_UPDATED',
-        message: `Application status for ${updatedApplication.company} updated to ${updatedApplication.status}`,
-        link: `/dashboard`,
-      });
-    }
-    */
     res.json(updatedApplication);
   } else {
     res.status(404);
@@ -137,6 +134,23 @@ export const deleteApplication = asyncHandler(async (req: AuthRequest, res: Resp
     res.status(404);
     throw new Error('Application not found');
   }
+});
+
+/**
+ * @desc    Generate strategic role summary
+ * @route   POST /api/applications/summarize
+ * @access  Private
+ */
+export const generateStrategicSummaryAction = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { jdText } = req.body;
+  
+  if (!jdText) {
+    res.status(400);
+    throw new Error('Please provide jdText');
+  }
+
+  const summary = await jobDescriptionService.generateStrategicSummary(jdText);
+  res.json({ summary });
 });
 
 /**
